@@ -18,41 +18,63 @@ jobs:
           fetch-depth: 0
 
       - name: Setup CUDA
-        uses: Jimver/cuda-toolkit@v0.2.36
+        uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: '12.9.2'
+
+      - name: Configure MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Show toolchain
         shell: pwsh
         run: |
+          Write-Host "=== CMake ==="
           cmake --version
-          ninja --version
+
+          Write-Host "=== NVCC ==="
           nvcc --version
+
+          Write-Host "=== Compiler ==="
+          cl
 
       - name: Configure
         shell: pwsh
         run: |
           cmake -S . -B build `
-            -G "Ninja Multi-Config" `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
             -DGGML_CUDA=ON `
             -DCMAKE_CUDA_ARCHITECTURES=89
 
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel
+          cmake --build build `
+            --config Release `
+            --parallel
 
       - name: Collect binaries
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path package
-          Copy-Item build/pocket-tts.exe package/
-          Copy-Item build/tts-server.exe package/
+
+          Get-ChildItem build -Recurse -Filter "pocket-tts.exe" |
+            Copy-Item -Destination package
+
+          Get-ChildItem build -Recurse -Filter "tts-server.exe" |
+            Copy-Item -Destination package
+
+          Write-Host "=== Built files ==="
+          Get-ChildItem package
 
       - name: Package
         shell: pwsh
         run: |
-          Compress-Archive -Path package/* -DestinationPath pockettts-windows-cuda.zip
+          Compress-Archive `
+            -Path package/* `
+            -DestinationPath pockettts-windows-cuda.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
