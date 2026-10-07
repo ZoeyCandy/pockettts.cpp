@@ -38,10 +38,6 @@ jobs:
           cmake --version
 
           Write-Host ""
-          Write-Host "=== Ninja ==="
-          ninja --version
-
-          Write-Host ""
           Write-Host "=== MSVC ==="
           cl
 
@@ -68,54 +64,53 @@ jobs:
             --config Release `
             --parallel
 
-      - name: Find binaries
+      - name: Show Release files
         shell: pwsh
         run: |
-          Write-Host "=== Executables ==="
+          Write-Host "=== build\Release ==="
 
-          Get-ChildItem build -Recurse -File |
-            Where-Object {
-              $_.Name -eq "pocket-tts.exe" -or
-              $_.Name -eq "tts-server.exe"
-            } |
+          if (-not (Test-Path "build\Release")) {
+            Write-Error "build\Release does not exist"
+            exit 1
+          }
+
+          Get-ChildItem "build\Release" -File -Recurse |
+            Sort-Object FullName |
             ForEach-Object {
               Write-Host $_.FullName
             }
 
-      - name: Collect binaries
+      - name: Collect complete Release directory
         shell: pwsh
         run: |
+          if (-not (Test-Path "build\Release")) {
+            Write-Error "build\Release does not exist"
+            exit 1
+          }
+
           New-Item -ItemType Directory -Force -Path package | Out-Null
 
-          $pocket = Get-ChildItem build -Recurse -Filter "pocket-tts.exe" |
-            Select-Object -First 1
-
-          $server = Get-ChildItem build -Recurse -Filter "tts-server.exe" |
-            Select-Object -First 1
-
-          if (-not $pocket) {
-            Write-Error "pocket-tts.exe was not found"
-            exit 1
-          }
-
-          if (-not $server) {
-            Write-Error "tts-server.exe was not found"
-            exit 1
-          }
-
-          Copy-Item $pocket.FullName package/pocket-tts.exe
-          Copy-Item $server.FullName package/tts-server.exe
+          Copy-Item `
+            "build\Release\*" `
+            "package\" `
+            -Recurse `
+            -Force
 
           Write-Host ""
-          Write-Host "=== Package ==="
-          Get-ChildItem package
+          Write-Host "=== Package contents ==="
+
+          Get-ChildItem "package" -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              Write-Host $_.FullName
+            }
 
       - name: Package
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path package/* `
-            -DestinationPath pockettts-windows-cuda.zip `
+            -Path "package\*" `
+            -DestinationPath "pockettts-windows-cuda.zip" `
             -Force
 
       - name: Upload artifact
