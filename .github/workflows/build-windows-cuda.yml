@@ -1,0 +1,61 @@
+name: Build Windows CUDA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup CUDA
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '13.2.0'
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          cmake --version
+          ninja --version
+          nvcc --version
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Ninja Multi-Config" `
+            -DGGML_CUDA=ON `
+            -DCMAKE_CUDA_ARCHITECTURES=89
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Collect binaries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package
+          Copy-Item build/pocket-tts.exe package/
+          Copy-Item build/tts-server.exe package/
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path package/* -DestinationPath pockettts-windows-cuda.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pockettts-windows-cuda
+          path: pockettts-windows-cuda.zip
