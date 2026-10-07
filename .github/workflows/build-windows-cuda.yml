@@ -8,7 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2025
+    name: Windows x64 CUDA
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repository
@@ -20,10 +21,13 @@ jobs:
       - name: Setup CUDA
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '12.9.2'
+          cuda: '12.8.1'
+          method: network
+          use-github-cache: true
+          use-local-cache: true
 
-      - name: Configure MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1.13.0
         with:
           arch: x64
 
@@ -33,11 +37,21 @@ jobs:
           Write-Host "=== CMake ==="
           cmake --version
 
-          Write-Host "=== NVCC ==="
+          Write-Host ""
+          Write-Host "=== Ninja ==="
+          ninja --version
+
+          Write-Host ""
+          Write-Host "=== MSVC ==="
+          cl
+
+          Write-Host ""
+          Write-Host "=== CUDA ==="
           nvcc --version
 
-          Write-Host "=== Compiler ==="
-          cl
+          Write-Host ""
+          Write-Host "=== CUDA_PATH ==="
+          Write-Host $env:CUDA_PATH
 
       - name: Configure
         shell: pwsh
@@ -45,8 +59,7 @@ jobs:
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            -DGGML_CUDA=ON `
-            -DCMAKE_CUDA_ARCHITECTURES=89
+            -DGGML_CUDA=ON
 
       - name: Build
         shell: pwsh
@@ -55,18 +68,46 @@ jobs:
             --config Release `
             --parallel
 
+      - name: Find binaries
+        shell: pwsh
+        run: |
+          Write-Host "=== Executables ==="
+
+          Get-ChildItem build -Recurse -File |
+            Where-Object {
+              $_.Name -eq "pocket-tts.exe" -or
+              $_.Name -eq "tts-server.exe"
+            } |
+            ForEach-Object {
+              Write-Host $_.FullName
+            }
+
       - name: Collect binaries
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path package
+          New-Item -ItemType Directory -Force -Path package | Out-Null
 
-          Get-ChildItem build -Recurse -Filter "pocket-tts.exe" |
-            Copy-Item -Destination package
+          $pocket = Get-ChildItem build -Recurse -Filter "pocket-tts.exe" |
+            Select-Object -First 1
 
-          Get-ChildItem build -Recurse -Filter "tts-server.exe" |
-            Copy-Item -Destination package
+          $server = Get-ChildItem build -Recurse -Filter "tts-server.exe" |
+            Select-Object -First 1
 
-          Write-Host "=== Built files ==="
+          if (-not $pocket) {
+            Write-Error "pocket-tts.exe was not found"
+            exit 1
+          }
+
+          if (-not $server) {
+            Write-Error "tts-server.exe was not found"
+            exit 1
+          }
+
+          Copy-Item $pocket.FullName package/pocket-tts.exe
+          Copy-Item $server.FullName package/tts-server.exe
+
+          Write-Host ""
+          Write-Host "=== Package ==="
           Get-ChildItem package
 
       - name: Package
@@ -74,10 +115,12 @@ jobs:
         run: |
           Compress-Archive `
             -Path package/* `
-            -DestinationPath pockettts-windows-cuda.zip
+            -DestinationPath pockettts-windows-cuda.zip `
+            -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: pockettts-windows-cuda
           path: pockettts-windows-cuda.zip
+          if-no-files-found: error
